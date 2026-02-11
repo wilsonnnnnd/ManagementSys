@@ -8,6 +8,8 @@ Features
 ---
 - User CRUD: create, read, update, delete (with owner/admin protections)
 - Authentication: login, refresh, logout using access token (JWT) + refresh token (stored in `sessions` table)
+- Single active session per user: login will create or update a single active `sessions` record for the user (existing active session is replaced)
+- Refresh token rotation: calling `/auth/refresh` will rotate the refresh token (server replaces the old refresh token with a new one and returns it)
 - Passwords hashed with `bcrypt`
 - Role-based authorization (middleware to require `admin` or owner)
 - Input validation with `express-validator`
@@ -62,12 +64,12 @@ Base URL: `http://localhost:3000`
 Auth
 - POST `/auth/login`
   - Body: `{ "email": "...", "password": "..." }`
-  - Response: `{ accessToken, refreshToken, user }`
+  - Response: `{ accessToken, refreshToken, user }` (server creates or updates a single session record for the user)
 - POST `/auth/refresh`
   - Body: `{ "refreshToken": "..." }`
-  - Response: `{ accessToken }`
+  - Response: `{ accessToken, refreshToken }` — server rotates the refresh token and returns the new one
 - POST `/auth/logout`
-  - Body: `{ "refreshToken": "..." }` (or send refresh token in `Authorization: Bearer <token>`)
+  - Body: `{ "refreshToken": "..." }` (or send refresh token in `Authorization: Bearer <token>`) — logout marks session as revoked
 
 Users (protected — require `Authorization: Bearer <accessToken>`) 
 - GET `/users` — list users
@@ -80,9 +82,9 @@ Users (protected — require `Authorization: Bearer <accessToken>`)
 Authentication flow
 ---
 1. Client calls `/auth/login` with credentials.
-2. Server verifies password (bcrypt). If valid, server creates a `sessions` record with a generated refresh token and expiry, and returns an access token (JWT) and the refresh token.
+2. Server verifies password (bcrypt). If valid, server creates or updates a single `sessions` record for the user with a generated refresh token and expiry, and returns an access token (JWT) and the refresh token.
 3. Client includes `Authorization: Bearer <accessToken>` on protected requests. Middleware verifies JWT and checks session status in the `sessions` table.
-4. When access token expires, client calls `/auth/refresh` with the refresh token to obtain a new access token.
+4. When access token expires, client calls `/auth/refresh` with the refresh token to obtain a new access token; the server rotates the refresh token (replaces the stored token) and returns a new `refreshToken` alongside the `accessToken`.
 5. Logout marks the session's `revoked_at` field.
 
 Database (Prisma)
@@ -103,8 +105,8 @@ See `Postman-Testing.md` for a ready guide and environment variables for running
 Security notes
 ---
 - Always set a strong `JWT_SECRET` in production; application now throws at startup if missing.
-- Consider rotating refresh tokens and using secure cookie storage for refresh tokens in browsers.
-- Use HTTPS in production.
+- The application now rotates refresh tokens on `/auth/refresh` and maintains a single active session per user by default.
+- Use HTTPS in production and consider storing refresh tokens in secure, HttpOnly cookies for browser clients.
 
 Next steps / improvements
 ---

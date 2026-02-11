@@ -35,19 +35,37 @@ exports.login = async (email, password) => {
     const match = await bcrypt.compare(password, user.password_hash);
     assert(match, "Invalid credentials", 401);
 
-    // create refresh token and session
+    // create refresh token and create/update single session per user
     const refreshToken = randomToken(32);
     const refreshExpiresAt = new Date(
         Date.now() + REFRESH_TTL_HOURS * 60 * 60 * 1000,
     );
 
-    const session = await prisma.sessions.create({
-        data: {
-            user_id: user.id,
-            refresh_token: refreshToken,
-            refresh_expires_at: refreshExpiresAt,
-        },
+    // Attempt to reuse an active session for this user. If one exists,
+    // replace its refresh token (rotate). Otherwise create a new session.
+    let session = await prisma.sessions.findFirst({
+        where: { user_id: user.id, revoked_at: null },
+        orderBy: { id: "desc" },
     });
+
+    if (session) {
+        session = await prisma.sessions.update({
+            where: { id: session.id },
+            data: {
+                refresh_token: refreshToken,
+                refresh_expires_at: refreshExpiresAt,
+                revoked_at: null,
+            },
+        });
+    } else {
+        session = await prisma.sessions.create({
+            data: {
+                user_id: user.id,
+                refresh_token: refreshToken,
+                refresh_expires_at: refreshExpiresAt,
+            },
+        });
+    }
 
     // create access token that references session id
     const accessToken = jwt.sign(
@@ -77,12 +95,27 @@ exports.refresh = async (refreshToken) => {
     });
     assert(user, "User not found", 401);
 
+    // Rotate refresh token: replace old token with a new one and extend expiry
+    const newRefreshToken = randomToken(32);
+    const newRefreshExpiresAt = new Date(
+        Date.now() + REFRESH_TTL_HOURS * 60 * 60 * 1000,
+    );
+
+    await prisma.sessions.update({
+        where: { id: session.id },
+        data: {
+            refresh_token: newRefreshToken,
+            refresh_expires_at: newRefreshExpiresAt,
+        },
+    });
+
     const accessToken = jwt.sign(
         { userId: user.id, sessionId: session.id },
         JWT_SECRET,
         { expiresIn: `${ACCESS_TTL_MIN}m` },
     );
-    return { accessToken };
+
+    return { accessToken, refreshToken: newRefreshToken };
 };
 
 exports.logout = async (refreshToken) => {
