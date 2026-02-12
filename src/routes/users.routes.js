@@ -8,10 +8,17 @@ const { body, param } = require("express-validator");
 const { ROLES } = require("../types/user");
 const handleValidation = require("../middleware/validation.middleware");
 
-router.get("/", UsersController.list);
-router.get("/:id", UsersController.getById);
+router.get("/", requireRole("admin"), UsersController.list);
+router.get(
+	"/:id",
+	param("id").isInt().toInt(),
+	handleValidation,
+	requireRoleOrOwner("admin"),
+	UsersController.getById
+);
 router.post(
 	"/",
+	requireRole("admin"),
 	body("email").isEmail().withMessage("invalid email"),
 	body("password").isLength({ min: 6 }).withMessage("password must be at least 6 characters"),
 	body("role").optional().isIn([ROLES.admin, ROLES.user]).withMessage("invalid role"),
@@ -25,6 +32,7 @@ router.put(
 	body("email").optional().isEmail().withMessage("invalid email"),
 	body("role").optional().isIn([ROLES.admin, ROLES.user]).withMessage("invalid role"),
 	handleValidation,
+	requireRoleOrOwner("admin"),
 	UsersController.update
 );
 
