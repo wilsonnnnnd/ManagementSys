@@ -4,6 +4,7 @@ const cookieParser = require("cookie-parser");
 
 const routes = require("./routes");
 const authMiddleware = require("./middleware/auth.middleware");
+const logMiddleware = require("./middleware/log.middleware");
 const notFound = require("./middleware/notfound.middleware");
 const errorHandler = require("./middleware/error.middleware");
 
@@ -17,6 +18,9 @@ app.use(express.json());
 
 // authentication (applies to all routes except /health and /auth/* inside middleware)
 app.use(authMiddleware);
+
+// request/response logging (uses req.user when available)
+app.use(logMiddleware);
 
 // routes
 app.use("/", routes);

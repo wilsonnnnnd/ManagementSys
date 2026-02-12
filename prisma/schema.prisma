@@ -32,4 +32,19 @@ model users {
   created_at        DateTime   @default(now()) @db.Timestamp(6)
   updated_at        DateTime   @default(now()) @db.Timestamp(6)
   sessions          sessions[]
+  api_logs          api_logs[]
+}
+
+model api_logs {
+  id          Int      @id @default(autoincrement())
+  timestamp   DateTime @default(now()) @db.Timestamp(6)
+  ip          String?
+  method      String
+  path        String
+  status      Int
+  duration_ms Int?
+  user_id     Int?
+  body        Json?
+
+  users       users?   @relation(fields: [user_id], references: [id], onDelete: SetNull)
 }
