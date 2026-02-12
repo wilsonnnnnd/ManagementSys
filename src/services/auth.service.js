@@ -35,7 +35,7 @@ exports.login = async (email, password) => {
     const user = await prisma.users.findUnique({ where: { email } });
     assert(user, "Invalid credentials", 401);
 
-    const match = await bcrypt.compare(password, user.password_hash);
+    const match = await bcrypt.compare(password, user.password);
     assert(match, "Invalid credentials", 401);
 
     // create refresh token secret and create/update single session per user

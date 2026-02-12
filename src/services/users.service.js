@@ -47,14 +47,14 @@ exports.create = async ({
         "password must be at least 6 characters",
         400,
     );
-    const password_hash = await require("bcrypt").hash(password, 10);
+    const passwordHash = await require("bcrypt").hash(password, 10);
 
     const created = await prisma.users.create({
         data: {
             first_name: first_name || "",
             last_name: last_name || "",
             email: trimmedEmail,
-            password_hash,
+            password: passwordHash,
             role: role || "user",
             status: status || "pending",
         },

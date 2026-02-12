@@ -89,13 +89,13 @@ Authentication flow
 
 Database (Prisma)
 ---
-- Model `users` stores user details and `password_hash`.
+- Model `users` stores user details and `password` (hashed password).
 - Model `sessions` stores `refresh_token`, `refresh_expires_at`, `revoked_at`, and relation to `users`.
 
 Development utilities
 ---
 - `scripts/list-users.js` — list users from DB
-- `scripts/fix-passwords.js` — convert plaintext `password_hash` values to bcrypt hashes (used during migration/cleanup)
+-- `scripts/fix-passwords.js` — convert plaintext `password` values to bcrypt hashes (used during migration/cleanup)
 - `scripts/test-login.js` — helper to test `auth.service.login` locally
 
 Testing with Postman

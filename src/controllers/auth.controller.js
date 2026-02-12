@@ -13,6 +13,8 @@ exports.login = async (req, res, next) => {
             maxAge: Number(process.env.REFRESH_TTL_HOURS || 24) * 60 * 60 * 1000,
         });
 
+        // do not return password field
+        if (result.user && result.user.password) delete result.user.password;
         res.json({
             accessToken: result.accessToken,
             user: result.user,

@@ -16,7 +16,7 @@ CREATE TABLE "users" (
     "first_name" TEXT NOT NULL,
     "last_name" TEXT NOT NULL,
     "email" TEXT NOT NULL,
-    "password_hash" TEXT NOT NULL,
+    "password" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'pending',
     "role" TEXT NOT NULL DEFAULT 'user',
     "email_verified_at" TIMESTAMP(6),

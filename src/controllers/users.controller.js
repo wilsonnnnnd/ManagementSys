@@ -4,7 +4,15 @@ const UsersService = require("../services/users.service");
 exports.list = async (req, res, next) => {
     try {
         const users = await UsersService.list();
-        res.json(users);
+        // strip password field from each user
+        const safe = users.map((u) => {
+            if (u && u.password) {
+                const { password, ...rest } = u;
+                return rest;
+            }
+            return u;
+        });
+        res.json(safe);
     } catch (err) {
         next(err);
     }
@@ -14,6 +22,7 @@ exports.getById = async (req, res, next) => {
     try {
         const id = Number(req.params.id);
         const user = await UsersService.getById(id);
+        if (user && user.password) delete user.password;
         res.json(user);
     } catch (err) {
         next(err);
@@ -32,6 +41,7 @@ exports.create = async (req, res, next) => {
             role,
             status,
         });
+        if (created && created.password) delete created.password;
         res.status(201).json(created);
     } catch (err) {
         next(err);
@@ -43,6 +53,7 @@ exports.update = async (req, res, next) => {
         const id = Number(req.params.id);
         const data = req.body;
         const updated = await UsersService.update(id, data);
+        if (updated && updated.password) delete updated.password;
         res.json(updated);
     } catch (err) {
         next(err);

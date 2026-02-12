@@ -22,7 +22,7 @@ model users {
   first_name        String
   last_name         String
   email             String     @unique
-  password_hash     String
+  password          String
   status            String     @default("pending")
   role              String     @default("user")
   email_verified_at DateTime?  @db.Timestamp(6)
