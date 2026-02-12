@@ -1,6 +1,13 @@
 const AuthService = require("../services/auth.service");
 const UsersService = require("../services/users.service");
 const { encodeId } = require("../utils/idCipher");
+const jwt = require("jsonwebtoken");
+const mailer = require("../utils/mailer");
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    throw new Error("Environment variable JWT_SECRET is required");
+}
 
 exports.login = async (req, res, next) => {
     try {
@@ -39,22 +46,82 @@ exports.register = async (req, res, next) => {
             email,
             password,
         });
+        // generate email verification token (15 minutes)
+        const verifyToken = jwt.sign(
+            { userId: created.id, type: "email_verification" },
+            JWT_SECRET,
+            { expiresIn: "15m" },
+        );
 
-        // perform login to create session and tokens
-        const result = await AuthService.login(email, password);
+        const base = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+        const verifyLink = `${base}/auth/verify-email?token=${encodeURIComponent(verifyToken)}`;
 
-        // set refresh token cookie
-        res.cookie("refreshToken", result.refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            maxAge: Number(process.env.REFRESH_TTL_HOURS || 24) * 60 * 60 * 1000,
-        });
+        // send verification email (await result)
+        await mailer.sendVerificationEmail(created.email, verifyLink);
 
-        // remove password before sending and encode id for response
+        // remove password before sending and return created user (with encoded id)
         if (created && created.password) delete created.password;
         const respCreated = created && created.id ? { ...created, id: encodeId(created.id) } : created;
-        res.status(201).json({ accessToken: result.accessToken, user: respCreated });
+        res.status(201).json({ message: "registered; verification email sent", user: respCreated });
+    } catch (err) {
+        next(err);
+    }
+};
+
+exports.verifyEmail = async (req, res, next) => {
+    try {
+        const token = req.query.token || (req.body && req.body.token);
+        if (!token) {
+            const err = new Error("token required");
+            err.status = 400;
+            throw err;
+        }
+
+        let payload;
+        try {
+            payload = jwt.verify(token, JWT_SECRET);
+        } catch (err) {
+            const e = new Error("Invalid or expired token");
+            e.status = 400;
+            throw e;
+        }
+
+        if (payload.type !== "email_verification" || !payload.userId) {
+            const e = new Error("Invalid token");
+            e.status = 400;
+            throw e;
+        }
+
+        const updated = await UsersService.update(payload.userId, { status: "active" });
+        if (updated && updated.password) delete updated.password;
+        if (updated && updated.id) updated.id = encodeId(updated.id);
+
+        res.json({ message: "email verified", user: updated });
+    } catch (err) {
+        next(err);
+    }
+};
+
+exports.sendTestEmail = async (req, res, next) => {
+    try {
+        const toEmail = req.body && req.body.email;
+        if (!toEmail) {
+            const err = new Error('email required');
+            err.status = 400;
+            throw err;
+        }
+
+        const base = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+        const testLink = `${base}/`; // simple test link
+
+        const ok = await mailer.sendVerificationEmail(toEmail, testLink);
+        if (!ok) {
+            const err = new Error('failed to send email');
+            err.status = 502;
+            throw err;
+        }
+
+        res.json({ sent: true });
     } catch (err) {
         next(err);
     }

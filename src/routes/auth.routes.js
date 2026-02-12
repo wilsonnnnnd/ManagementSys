@@ -25,6 +25,11 @@ router.post(
     AuthController.register,
 );
 
+router.get(
+    "/verify-email",
+    AuthController.verifyEmail,
+);
+
 router.post(
     "/refresh",
     // refresh token can be provided in cookie or in body; validation is handled in controller/service
@@ -35,6 +40,13 @@ router.post(
     "/logout",
     // accept refresh token via cookie/body/header; validation in controller/service
     AuthController.logout,
+);
+
+router.post(
+    "/test-email",
+    body("email").isEmail().withMessage("invalid email"),
+    handleValidation,
+    AuthController.sendTestEmail,
 );
 
 module.exports = router;
