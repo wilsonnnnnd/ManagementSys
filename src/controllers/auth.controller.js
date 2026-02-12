@@ -1,5 +1,6 @@
 const AuthService = require("../services/auth.service");
 const UsersService = require("../services/users.service");
+const { encodeId } = require("../utils/idCipher");
 
 exports.login = async (req, res, next) => {
     try {
@@ -14,12 +15,15 @@ exports.login = async (req, res, next) => {
             maxAge: Number(process.env.REFRESH_TTL_HOURS || 24) * 60 * 60 * 1000,
         });
 
-        // do not return password field
-        if (result.user && result.user.password) delete result.user.password;
-        res.json({
-            accessToken: result.accessToken,
-            user: result.user,
-        });
+        // do not return password field and encode id for response
+        let respUser = null;
+        if (result.user) {
+            const userCopy = { ...result.user };
+            if (userCopy.password) delete userCopy.password;
+            if (userCopy.id) userCopy.id = encodeId(userCopy.id);
+            respUser = userCopy;
+        }
+        res.json({ accessToken: result.accessToken, user: respUser });
     } catch (err) {
         next(err);
     }
@@ -47,10 +51,10 @@ exports.register = async (req, res, next) => {
             maxAge: Number(process.env.REFRESH_TTL_HOURS || 24) * 60 * 60 * 1000,
         });
 
-        // remove password before sending
+        // remove password before sending and encode id for response
         if (created && created.password) delete created.password;
-
-        res.status(201).json({ accessToken: result.accessToken, user: created });
+        const respCreated = created && created.id ? { ...created, id: encodeId(created.id) } : created;
+        res.status(201).json({ accessToken: result.accessToken, user: respCreated });
     } catch (err) {
         next(err);
     }

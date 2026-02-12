@@ -4,6 +4,7 @@ const router = express.Router();
 
 const UsersController = require("../controllers/users.controller");
 const { requireRole, requireRoleOrOwner } = require("../middleware/authorize.middleware");
+const { decodeIdParam } = require("../middleware/id.middleware");
 const { body, param } = require("express-validator");
 const { ROLES } = require("../types/user");
 const handleValidation = require("../middleware/validation.middleware");
@@ -11,6 +12,7 @@ const handleValidation = require("../middleware/validation.middleware");
 router.get("/", requireRole("admin"), UsersController.list);
 router.get(
 	"/:id",
+	decodeIdParam,
 	param("id").isInt().toInt(),
 	handleValidation,
 	requireRoleOrOwner("admin"),
@@ -28,6 +30,7 @@ router.post(
 
 router.put(
 	"/:id",
+	decodeIdParam,
 	param("id").isInt().toInt(),
 	body("email").optional().isEmail().withMessage("invalid email"),
 	body("role").optional().isIn([ROLES.admin, ROLES.user]).withMessage("invalid role"),
@@ -36,6 +39,6 @@ router.put(
 	UsersController.update
 );
 
-router.delete("/:id", param("id").isInt().toInt(), handleValidation, requireRoleOrOwner("admin"), UsersController.delete);
+router.delete("/:id", decodeIdParam, param("id").isInt().toInt(), handleValidation, requireRoleOrOwner("admin"), UsersController.delete);
 
 module.exports = router;
