@@ -16,6 +16,16 @@ router.post(
 );
 
 router.post(
+    "/register",
+    body("email").isEmail().withMessage("invalid email"),
+    body("password").isLength({ min: 6 }).withMessage("password must be at least 6 characters"),
+    body("first_name").optional().isString(),
+    body("last_name").optional().isString(),
+    handleValidation,
+    AuthController.register,
+);
+
+router.post(
     "/refresh",
     // refresh token can be provided in cookie or in body; validation is handled in controller/service
     AuthController.refresh,

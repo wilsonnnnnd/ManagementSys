@@ -80,9 +80,15 @@ exports.login = async (email, password) => {
         { expiresIn: `${ACCESS_TTL_MIN}m` },
     );
 
+    // update last_login_at for user and return updated user
+    const updatedUser = await prisma.users.update({
+        where: { id: user.id },
+        data: { last_login_at: new Date() },
+    });
+
     // return a token that includes session id and raw secret: "{sessionId}.{secret}"
     const refreshToken = tokenService.makeRefreshToken(session.id, secret);
-    return { accessToken, refreshToken, user };
+    return { accessToken, refreshToken, user: updatedUser };
 };
 
 exports.refresh = async (refreshToken) => {

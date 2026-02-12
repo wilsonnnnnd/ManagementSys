@@ -1,4 +1,5 @@
 const AuthService = require("../services/auth.service");
+const UsersService = require("../services/users.service");
 
 exports.login = async (req, res, next) => {
     try {
@@ -19,6 +20,37 @@ exports.login = async (req, res, next) => {
             accessToken: result.accessToken,
             user: result.user,
         });
+    } catch (err) {
+        next(err);
+    }
+};
+
+exports.register = async (req, res, next) => {
+    try {
+        const { first_name, last_name, email, password } = req.body;
+        // create user
+        const created = await UsersService.create({
+            first_name,
+            last_name,
+            email,
+            password,
+        });
+
+        // perform login to create session and tokens
+        const result = await AuthService.login(email, password);
+
+        // set refresh token cookie
+        res.cookie("refreshToken", result.refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: Number(process.env.REFRESH_TTL_HOURS || 24) * 60 * 60 * 1000,
+        });
+
+        // remove password before sending
+        if (created && created.password) delete created.password;
+
+        res.status(201).json({ accessToken: result.accessToken, user: created });
     } catch (err) {
         next(err);
     }

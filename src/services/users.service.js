@@ -1,4 +1,5 @@
 const prisma = require("../db/prisma");
+const { ROLES, isValidRole } = require("../types/user");
 
 function assert(condition, message, status = 400) {
     if (!condition) {
@@ -49,13 +50,14 @@ exports.create = async ({
     );
     const passwordHash = await require("bcrypt").hash(password, 10);
 
+    const finalRole = role && isValidRole(role) ? role : ROLES.user;
     const created = await prisma.users.create({
         data: {
             first_name: first_name || "",
             last_name: last_name || "",
             email: trimmedEmail,
             password: passwordHash,
-            role: role || "user",
+            role: finalRole,
             status: status || "pending",
         },
     });
@@ -76,6 +78,13 @@ exports.update = async (id, data) => {
             err.status = 400;
             throw err;
         }
+    }
+
+    // Validate role when present
+    if (data.role !== undefined && !isValidRole(data.role)) {
+        const err = new Error("invalid role");
+        err.status = 400;
+        throw err;
     }
 
     const updated = await prisma.users.update({ where: { id }, data });
