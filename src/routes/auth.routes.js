@@ -17,15 +17,13 @@ router.post(
 
 router.post(
     "/refresh",
-    body("refreshToken").isString().withMessage("refreshToken required"),
-    handleValidation,
+    // refresh token can be provided in cookie or in body; validation is handled in controller/service
     AuthController.refresh,
 );
 
 router.post(
     "/logout",
-    body("refreshToken").optional().isString(),
-    handleValidation,
+    // accept refresh token via cookie/body/header; validation in controller/service
     AuthController.logout,
 );
 

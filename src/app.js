@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 
 const routes = require("./routes");
 const authMiddleware = require("./middleware/auth.middleware");
@@ -9,7 +10,9 @@ const errorHandler = require("./middleware/error.middleware");
 const app = express();
 
 // basic middleware
-app.use(cors());
+// allow credentials (cookies) and parse cookies
+app.use(cors({ origin: true, credentials: true }));
+app.use(cookieParser());
 app.use(express.json());
 
 // authentication (applies to all routes except /health and /auth/* inside middleware)
