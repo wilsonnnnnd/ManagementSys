@@ -138,7 +138,11 @@ exports.refresh = async (refreshToken) => {
         { expiresIn: `${ACCESS_TTL_MIN}m` },
     );
 
-    return { accessToken, refreshToken: tokenService.makeRefreshToken(session.id, newSecret) };
+    // do not return password field
+    const safeUser = { ...user };
+    if (safeUser.password) delete safeUser.password;
+
+    return { accessToken, refreshToken: tokenService.makeRefreshToken(session.id, newSecret), user: safeUser };
 };
 
 exports.logout = async (refreshToken) => {

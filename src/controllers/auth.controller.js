@@ -77,6 +77,8 @@ exports.refresh = async (req, res, next) => {
     try {
         const token = (req.body && req.body.refreshToken) || req.cookies?.refreshToken;
         const result = await AuthService.refresh(token);
+        // attach user to request so log.middleware can record user_id for this /auth/refresh request
+        if (result.user) req.user = result.user;
         // rotate cookie to the new refresh token returned by service
         if (result.refreshToken) {
             res.cookie("refreshToken", result.refreshToken, {
