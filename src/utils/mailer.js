@@ -1,7 +1,7 @@
 // Mailer: prefer Resend SDK when RESEND_API_KEY is set and SDK is installed,
 // otherwise log to console.
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const EMAIL_FROM = process.env.EMAIL_FROM || 'no-reply@managementsyshd.com';
+const EMAIL_FROM = process.env.EMAIL_FROM || 'no-reply@email.hdpoker.xyz';
 
 let resendClient = null;
 if (RESEND_API_KEY) {
