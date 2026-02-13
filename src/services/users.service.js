@@ -65,6 +65,68 @@ exports.create = async ({
     return created;
 };
 
+// Create user and also generate + persist an email verification token in a single transaction.
+// Returns { user, verifyToken, verifyExpiresAt }
+exports.createWithVerification = async ({
+    first_name,
+    last_name,
+    email,
+    password,
+    role,
+    status,
+    expiresMinutes = 15,
+}) => {
+    assert(typeof email === "string", "email must be a string", 400);
+    const trimmedEmail = email.trim();
+    assert(
+        trimmedEmail.length > 3 && trimmedEmail.includes("@"),
+        "invalid email",
+        400,
+    );
+
+    const exists = await prisma.users.findUnique({ where: { email: trimmedEmail } });
+    assert(!exists, "email already in use", 400);
+
+    assert(
+        typeof password === "string" && password.length >= 6,
+        "password must be at least 6 characters",
+    );
+    const passwordHash = await require("bcrypt").hash(password, 10);
+
+    const finalRole = role && isValidRole(role) ? role : ROLES.user;
+
+    const jwt = require("jsonwebtoken");
+    const JWT_SECRET = process.env.JWT_SECRET;
+    if (!JWT_SECRET) {
+        const err = new Error("Environment variable JWT_SECRET is required");
+        err.status = 500;
+        throw err;
+    }
+
+    // Use a transaction to ensure both create and update happen together.
+    const result = await prisma.$transaction(async (tx) => {
+        const created = await tx.users.create({
+            data: {
+                first_name: first_name || "",
+                last_name: last_name || "",
+                email: trimmedEmail,
+                password: passwordHash,
+                role: finalRole,
+                status: status || "pending",
+            },
+        });
+
+        const verifyToken = jwt.sign({ userId: created.id, type: "email_verification" }, JWT_SECRET, { expiresIn: `${expiresMinutes}m` });
+        const verifyExpiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000);
+
+        const updated = await tx.users.update({ where: { id: created.id }, data: { verify_token: verifyToken, verify_expires_at: verifyExpiresAt } });
+
+        return { user: updated, verifyToken, verifyExpiresAt };
+    });
+
+    return result;
+};
+
 exports.update = async (id, data) => {
     assert(Number.isFinite(id), "id must be a number", 400);
 

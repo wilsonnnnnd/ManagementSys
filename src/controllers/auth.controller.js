@@ -39,19 +39,14 @@ exports.login = async (req, res, next) => {
 exports.register = async (req, res, next) => {
     try {
         const { first_name, last_name, email, password } = req.body;
-        // create user
-        const created = await UsersService.create({
+        // create user and persist verification token + expiry
+        const { user: created, verifyToken, verifyExpiresAt } = await UsersService.createWithVerification({
             first_name,
             last_name,
             email,
             password,
+            expiresMinutes: 15,
         });
-        // generate email verification token (15 minutes)
-        const verifyToken = jwt.sign(
-            { userId: created.id, type: "email_verification" },
-            JWT_SECRET,
-            { expiresIn: "15m" },
-        );
 
         const base = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
         const verifyLink = `${base}/auth/verify-email?token=${encodeURIComponent(verifyToken)}`;
@@ -92,7 +87,27 @@ exports.verifyEmail = async (req, res, next) => {
             throw e;
         }
 
-        const updated = await UsersService.update(payload.userId, { status: "active" });
+        // ensure token matches the one stored on the user and hasn't expired
+        const user = await UsersService.getById(payload.userId);
+        if (!user) {
+            const e = new Error('User not found');
+            e.status = 404;
+            throw e;
+        }
+
+        if (!user.verify_token || user.verify_token !== token) {
+            const e = new Error('Invalid or mismatched token');
+            e.status = 400;
+            throw e;
+        }
+
+        if (!user.verify_expires_at || new Date(user.verify_expires_at) < new Date()) {
+            const e = new Error('Token expired');
+            e.status = 400;
+            throw e;
+        }
+
+        const updated = await UsersService.update(payload.userId, { status: "active", verify_token: null, verify_expires_at: null });
         if (updated && updated.password) delete updated.password;
         if (updated && updated.id) updated.id = encodeId(updated.id);
 
