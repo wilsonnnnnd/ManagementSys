@@ -49,4 +49,13 @@ router.post(
     AuthController.sendTestEmail,
 );
 
+router.post(
+    "/send-email",
+    body("to").isEmail().withMessage("invalid to email"),
+    body("subject").isString().notEmpty().withMessage("subject required"),
+    body("html").isString().notEmpty().withMessage("html required"),
+    handleValidation,
+    AuthController.sendCustomEmail,
+);
+
 module.exports = router;

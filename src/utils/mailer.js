@@ -41,4 +41,26 @@ async function sendVerificationEmail(toEmail, link) {
     return true;
 }
 
-module.exports = { sendVerificationEmail };
+async function sendEmail(toEmail, subject, html) {
+    if (resendClient) {
+        try {
+            const data = await resendClient.emails.send({
+                from: EMAIL_FROM,
+                to: [toEmail],
+                subject,
+                html,
+            });
+            console.log('Resend email sent, response=', data);
+            return true;
+        } catch (err) {
+            console.error('Resend send error:', err);
+            return false;
+        }
+    }
+
+    // fallback: log to console
+    console.log(`\n----- Email (to: ${toEmail}) -----\nSubject: ${subject}\n${html}\n-----------------------------------------------\n`);
+    return true;
+}
+
+module.exports = { sendVerificationEmail, sendEmail };
