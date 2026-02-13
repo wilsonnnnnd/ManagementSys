@@ -68,6 +68,12 @@ Auth
 - POST `/auth/logout`
   - Body: `{ "refreshToken": "..." }` (or send refresh token in `Authorization: Bearer <token>`) — logout marks session as revoked
 
+Admin Emails (admin only)
+ - POST `/emails`
+   - Headers: `Authorization: Bearer <accessToken>` (must be admin)
+   - Body: `{ "to": "user@example.com", "subject": "...", "html": "<p>...</p>" }`
+   - Response: `{ sent: true }` on success; server will use `RESEND_API_KEY` if configured, otherwise it logs the email to the server console in development.
+
 Users (protected — require `Authorization: Bearer <accessToken>`) 
 - GET `/users` — list users
 - GET `/users/:id` — get user by id
@@ -94,6 +100,16 @@ Registration & Email Verification
 
 Testing verification locally:
 - If `RESEND_API_KEY` is not configured the app falls back to logging the verification link to the server console; copy that link to complete verification in development.
+
+Sending admin emails locally:
+- Use a valid admin `accessToken` (include in `Authorization: Bearer <token>`). Example curl:
+
+```bash
+curl -X POST http://localhost:3000/emails \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <ADMIN_ACCESS_TOKEN>" \
+  -d '{"to":"user@example.com","subject":"Announcement","html":"<p>Hello users</p>"}'
+```
 
 Database (Prisma)
 ---
