@@ -1,9 +1,11 @@
 // Rate limiter with Redis backend when REDIS_URL is configured.
 // Falls back to an in-memory limiter for single-process/dev use.
 
-const WINDOW_SECONDS = 60 * 60; // 1 hour
-const MAX_PER_IP = 5;
-const MAX_PER_EMAIL = 5;
+// Configurable via environment variables
+const WINDOW_SECONDS = parseInt(process.env.RATE_LIMIT_WINDOW_SECONDS, 10) || 60 * 60; // default 1 hour
+const MAX_PER_IP = parseInt(process.env.RATE_LIMIT_MAX_PER_IP, 10) || 5;
+const MAX_PER_EMAIL = parseInt(process.env.RATE_LIMIT_MAX_PER_EMAIL, 10) || 5;
+const REDIS_PREFIX = process.env.RATE_LIMIT_REDIS_PREFIX || 'rl:forgot';
 
 let redisClient = null;
 const REDIS_URL = process.env.REDIS_URL || process.env.REDIS;
@@ -53,8 +55,8 @@ async function forgotPasswordRateLimiter(req, res, next) {
 
         if (redisClient) {
             // use Redis counters
-            const ipKey = `rl:forgot:ip:${ip}`;
-            const emailKey = email ? `rl:forgot:email:${email}` : null;
+            const ipKey = `${REDIS_PREFIX}:ip:${ip}`;
+            const emailKey = email ? `${REDIS_PREFIX}:email:${email}` : null;
 
             const ipRes = await incrRedisKey(ipKey, WINDOW_SECONDS);
             if (ipRes.count > MAX_PER_IP) {

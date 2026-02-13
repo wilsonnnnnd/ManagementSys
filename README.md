@@ -18,11 +18,13 @@ Features
 
 Quick start
 ---
-1. `.env`  fill values (especially `DATABASE_URL` and `JWT_SECRET`).
+1. Fill values in `.env` (especially `DATABASE_URL` and `JWT_SECRET`).
 2. Install dependencies:
 
 ```bash
 npm install
+# Optional: install `dotenv` so the app can load `.env` automatically at startup
+npm install dotenv --save
 ```
 
 3. Generate Prisma client and run migrations (development):
@@ -45,14 +47,14 @@ Environment variables
 - `JWT_SECRET` — HMAC secret for signing access tokens (required)
 - `ACCESS_TTL_MIN` — Access token lifetime in minutes
 - `REFRESH_TTL_HOURS` — Refresh token lifetime in hours
- - `RESEND_API_KEY` — (optional) API key for Resend email service; when set the app will send real verification emails.
- - `EMAIL_FROM` — (optional) email `from` address used when sending verification emails (default: `no-reply@managementsyshd.com`).
- - `APP_BASE_URL` — (optional) base URL used to build email verification links (default uses `http://localhost:<PORT>`).
-- `src/controllers` — Request handlers
-- `src/services` — Business logic and Prisma usage (`users.service.js`, `auth.service.js`)
-- `prisma/schema.prisma` — Prisma schema (models `users` and `sessions`)
-- `src/db/prisma.js` — Prisma client
-- `scripts/` — utility scripts used during development (user listing, password fixes)
+- `RESEND_API_KEY` — (optional) API key for Resend email service; when set the app will send real verification emails.
+- `EMAIL_FROM` — (optional) email `from` address used when sending verification emails (default: `no-reply@managementsyshd.com`).
+- `APP_BASE_URL` — (optional) base URL used to build email verification links (default uses `http://localhost:<PORT>`).
+- `RATE_LIMIT_WINDOW_SECONDS` — window length in seconds for rate limits (default `3600`).
+- `RATE_LIMIT_MAX_PER_IP` — max requests per IP per window (default `5`).
+- `RATE_LIMIT_MAX_PER_EMAIL` — max requests per email per window (default `5`).
+- `RATE_LIMIT_REDIS_PREFIX` — Redis key prefix for rate limiter keys (default `rl:forgot`).
+- `REDIS_URL` — when set and `ioredis` installed, the app uses Redis for counters.
 
 API summary
 ---
@@ -74,7 +76,7 @@ Admin Emails (admin only)
    - Body: `{ "to": "user@example.com", "subject": "...", "html": "<p>...</p>" }`
    - Response: `{ sent: true }` on success; server will use `RESEND_API_KEY` if configured, otherwise it logs the email to the server console in development.
 
-Users (protected — require `Authorization: Bearer <accessToken>`) 
+Users (protected — require `Authorization: Bearer <accessToken>`)
 - GET `/users` — list users
 - GET `/users/:id` — get user by id
 - POST `/users` — create user
@@ -98,8 +100,64 @@ Registration & Email Verification
   - Query/Body: `{ token }` — the verification JWT from the email link.
   - Behavior: verifies the JWT, ensures it matches the `verify_token` stored on the user and is not expired, then sets `status: "active"` and clears `verify_token` and `verify_expires_at`.
 
-Testing verification locally:
-- If `RESEND_API_KEY` is not configured the app falls back to logging the verification link to the server console; copy that link to complete verification in development.
+Password reset
+---
+- POST `/auth/forgot-password`
+  - Body: `{ "email": "user@example.com" }`
+  - Behavior: generates a one-time reset token for active users, stores a hashed token and expiry on the user record, and sends a reset link to the email. The response is always `200` with a generic message to avoid leaking whether the email exists.
+- POST `/auth/reset-password`
+  - Body: `{ "token": "<token>", "password": "newPassword" }`
+  - Behavior: validates the token (hashed match + expiry), sets the new password (bcrypt), clears the reset fields, and revokes active sessions for the user.
+
+Security & operational notes:
+- The server stores only a SHA-256 hash of the reset token (not the plaintext) and sends the plaintext once via email.
+- Default token expiry: 60 minutes. Default password policy: minimum 6 characters.
+
+Rate limiting (anti-abuse)
+---
+- The `/auth/forgot-password` endpoint is protected by rate limiting to prevent abuse. The app supports a Redis-backed limiter (recommended for production) and falls back to an in-memory limiter for single-process development.
+- Environment variable: `REDIS_URL` — when set and `ioredis` installed, rate counters are stored in Redis for global enforcement across instances. Without `REDIS_URL`, an in-memory limiter is used.
+- Default limits: 5 requests per IP per hour and 5 requests per email per hour. These values can be adjusted in code or promoted to configuration.
+- When a request is rejected due to rate limiting the server will respond with HTTP `429` and a JSON body like `{ "error": "<message>", "retryAfter": <seconds> }` and include a `Retry-After` header (seconds) when available. This is set when the limiter middleware attaches `retryAfter` to the error.
+
+Testing password reset locally:
+- Trigger a reset request (server will log link when not configured with `RESEND_API_KEY`):
+
+```bash
+curl -X POST http://localhost:3000/auth/forgot-password \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com"}'
+```
+
+- Complete the reset (replace `<TOKEN>` with the token from the email/console):
+
+```bash
+curl -X POST http://localhost:3000/auth/reset-password \
+  -H "Content-Type: application/json" \
+  -d '{"token":"<TOKEN>","password":"newPassword123"}'
+```
+
+Redis & production notes
+---
+- Use a dedicated Redis instance and set `REDIS_URL` in your environment to enable the distributed rate limiter. Install `ioredis` (already listed in `package.json`) and ensure the app can connect to Redis at startup.
+- In high-scale environments consider more advanced rate-limiting strategies (sliding-window, token bucket, or external API gateway rate limits) and monitoring/alerts for suspicious activity.
+
+Local Redis (quick start with Docker)
+---
+If you don't have a Redis instance you can run one locally via Docker for development:
+
+```powershell
+docker run -d --name redis -p 6379:6379 redis:7
+# or with a password:
+# docker run -d --name redis -p 6379:6379 redis:7 --requirepass yourpassword
+```
+
+Then set `REDIS_URL` in `.env`, for example:
+```
+REDIS_URL=redis://127.0.0.1:6379/0
+# or with password:
+# REDIS_URL=redis://:yourpassword@127.0.0.1:6379/0
+```
 
 Sending admin emails locally:
 - Use a valid admin `accessToken` (include in `Authorization: Bearer <token>`). Example curl:
@@ -119,7 +177,7 @@ Database (Prisma)
 Development utilities
 ---
 - `scripts/list-users.js` — list users from DB
--- `scripts/fix-passwords.js` — convert plaintext `password` values to bcrypt hashes (used during migration/cleanup)
+- `scripts/fix-passwords.js` — convert plaintext `password` values to bcrypt hashes (used during migration/cleanup)
 - `scripts/test-login.js` — helper to test `auth.service.login` locally
 
 Testing with Postman
@@ -133,7 +191,7 @@ Security notes
 - Use HTTPS in production and consider storing refresh tokens in secure, HttpOnly cookies for browser clients.
 
 Next steps / improvements
-- Add password reset endpoints.
+---
 - Add structured logging and rate-limiting for auth endpoints.
 - Add tests for services and controllers.
 
