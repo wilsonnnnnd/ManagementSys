@@ -117,6 +117,53 @@ exports.verifyEmail = async (req, res, next) => {
     }
 };
 
+exports.forgotPassword = async (req, res, next) => {
+    try {
+        const email = req.body && req.body.email;
+        if (!email) {
+            const err = new Error('email required');
+            err.status = 400;
+            throw err;
+        }
+
+        // generate reset token if user exists (service returns null otherwise)
+        const token = await UsersService.generateResetToken(email, 60);
+
+        // build link and send email only if token was generated
+        if (token) {
+            const base = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+            const resetLink = `${base}/auth/reset-password?token=${encodeURIComponent(token)}`;
+            await mailer.sendPasswordResetEmail(email, resetLink);
+        }
+
+        // Always return 200 to avoid disclosing account existence
+        res.json({ message: 'If an account exists, a reset link has been sent' });
+    } catch (err) {
+        next(err);
+    }
+};
+
+exports.resetPassword = async (req, res, next) => {
+    try {
+        const token = req.body && req.body.token;
+        const password = req.body && req.body.password;
+        if (!token || !password) {
+            const err = new Error('token and password required');
+            err.status = 400;
+            throw err;
+        }
+
+        const updated = await UsersService.resetPasswordByToken(token, password);
+
+        if (updated && updated.password) delete updated.password;
+        if (updated && updated.id) updated.id = encodeId(updated.id);
+
+        res.json({ message: 'password reset', user: updated });
+    } catch (err) {
+        next(err);
+    }
+};
+
 exports.sendTestEmail = async (req, res, next) => {
     try {
         const toEmail = req.body && req.body.email;

@@ -4,6 +4,7 @@ const router = express.Router();
 const AuthController = require("../controllers/auth.controller");
 const { body } = require("express-validator");
 const handleValidation = require("../middleware/validation.middleware");
+const { forgotPasswordRateLimiter } = require('../middleware/rateLimit.middleware');
 
 router.post(
     "/login",
@@ -28,6 +29,22 @@ router.post(
 router.get(
     "/verify-email",
     AuthController.verifyEmail,
+);
+
+router.post(
+    "/forgot-password",
+    body('email').isEmail().withMessage('invalid email'),
+    handleValidation,
+    forgotPasswordRateLimiter,
+    AuthController.forgotPassword,
+);
+
+router.post(
+    "/reset-password",
+    body('token').isString().notEmpty().withMessage('token required'),
+    body('password').isLength({ min: 6 }).withMessage('password must be at least 6 characters'),
+    handleValidation,
+    AuthController.resetPassword,
 );
 
 router.post(

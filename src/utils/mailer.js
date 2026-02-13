@@ -63,4 +63,10 @@ async function sendEmail(toEmail, subject, html) {
     return true;
 }
 
-module.exports = { sendVerificationEmail, sendEmail };
+async function sendPasswordResetEmail(toEmail, link) {
+    const subject = 'Password reset request';
+    const html = `Please reset your password by clicking the link below:<br/><a href="${link}">${link}</a>`;
+    return await sendEmail(toEmail, subject, html);
+}
+
+module.exports = { sendVerificationEmail, sendEmail, sendPasswordResetEmail };

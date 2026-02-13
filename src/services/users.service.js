@@ -159,3 +159,52 @@ exports.delete = async (id) => {
     const deleted = await prisma.users.delete({ where: { id } });
     return deleted;
 };
+
+// Generate a password reset token for the user with given email.
+// Returns the plaintext token when created, otherwise null.
+exports.generateResetToken = async (email, expiresMinutes = 60) => {
+    assert(typeof email === 'string', 'email must be a string', 400);
+    const trimmedEmail = email.trim();
+
+    const user = await prisma.users.findUnique({ where: { email: trimmedEmail } });
+    // For security, do not disclose whether user exists. Return null if not found.
+    if (!user || user.status !== 'active') return null;
+
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(32).toString('hex');
+    const hashed = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000);
+
+    await prisma.users.update({ where: { id: user.id }, data: { reset_token: hashed, reset_expires_at: expiresAt } });
+    return token;
+};
+
+// Verify reset token and set new password. Returns the updated user on success.
+exports.resetPasswordByToken = async (token, newPassword) => {
+    assert(typeof token === 'string' && token.length > 0, 'token required', 400);
+    assert(typeof newPassword === 'string' && newPassword.length >= 6, 'password must be at least 6 characters', 400);
+
+    const crypto = require('crypto');
+    const hashed = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await prisma.users.findFirst({ where: { reset_token: hashed, reset_expires_at: { gte: new Date() } } });
+    if (!user) {
+        const err = new Error('Invalid or expired token');
+        err.status = 400;
+        throw err;
+    }
+
+    const passwordHash = await require('bcrypt').hash(newPassword, 10);
+
+    // update password, clear reset fields
+    const updated = await prisma.users.update({ where: { id: user.id }, data: { password: passwordHash, reset_token: null, reset_expires_at: null } });
+
+    // revoke any active sessions for this user
+    try {
+        await prisma.sessions.updateMany({ where: { user_id: user.id, revoked_at: null }, data: { revoked_at: new Date() } });
+    } catch (e) {
+        console.error('failed to revoke sessions after password reset', e);
+    }
+
+    return updated;
+};
