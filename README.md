@@ -45,12 +45,9 @@ Environment variables
 - `JWT_SECRET` — HMAC secret for signing access tokens (required)
 - `ACCESS_TTL_MIN` — Access token lifetime in minutes
 - `REFRESH_TTL_HOURS` — Refresh token lifetime in hours
-
-Important files
----
-- `src/app.js` — Express app setup and middleware registration
-- `src/server.js` — Server bootstrap
-- `src/routes` — Route definitions (`/auth`, `/users`)
+ - `RESEND_API_KEY` — (optional) API key for Resend email service; when set the app will send real verification emails.
+ - `EMAIL_FROM` — (optional) email `from` address used when sending verification emails (default: `no-reply@managementsyshd.com`).
+ - `APP_BASE_URL` — (optional) base URL used to build email verification links (default uses `http://localhost:<PORT>`).
 - `src/controllers` — Request handlers
 - `src/services` — Business logic and Prisma usage (`users.service.js`, `auth.service.js`)
 - `prisma/schema.prisma` — Prisma schema (models `users` and `sessions`)
@@ -80,12 +77,23 @@ Users (protected — require `Authorization: Bearer <accessToken>`)
 - DELETE `/users/:id` — delete user (owner or admin; route protected with `requireRoleOrOwner`)
 
 Authentication flow
----
 1. Client calls `/auth/login` with credentials.
 2. Server verifies password (bcrypt). If valid, server creates or updates a single `sessions` record for the user with a generated refresh token and expiry, and returns an access token (JWT) and the refresh token.
 3. Client includes `Authorization: Bearer <accessToken>` on protected requests. Middleware verifies JWT and checks session status in the `sessions` table.
 4. When access token expires, client calls `/auth/refresh` with the refresh token to obtain a new access token; the server rotates the refresh token (replaces the stored token) and returns a new `refreshToken` alongside the `accessToken`.
 5. Logout marks the session's `revoked_at` field.
+
+Registration & Email Verification
+---
+- POST `/auth/register`
+  - Body: `{ first_name, last_name, email, password }`
+  - Behavior: creates a new user with `status: "pending"`, hashes the password, generates a short-lived email verification JWT (15 minutes), and stores `verify_token` and `verify_expires_at` on the user record in the same DB transaction. The server then sends a verification email containing a link to `/auth/verify-email?token=<token>`.
+- GET/POST `/auth/verify-email`
+  - Query/Body: `{ token }` — the verification JWT from the email link.
+  - Behavior: verifies the JWT, ensures it matches the `verify_token` stored on the user and is not expired, then sets `status: "active"` and clears `verify_token` and `verify_expires_at`.
+
+Testing verification locally:
+- If `RESEND_API_KEY` is not configured the app falls back to logging the verification link to the server console; copy that link to complete verification in development.
 
 Database (Prisma)
 ---
@@ -109,8 +117,7 @@ Security notes
 - Use HTTPS in production and consider storing refresh tokens in secure, HttpOnly cookies for browser clients.
 
 Next steps / improvements
----
-- Add email verification flows and password reset endpoints.
+- Add password reset endpoints.
 - Add structured logging and rate-limiting for auth endpoints.
 - Add tests for services and controllers.
 
