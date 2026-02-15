@@ -171,11 +171,37 @@ exports.generateResetToken = async (email, expiresMinutes = 60) => {
     if (!user || user.status !== 'active') return null;
 
     const crypto = require('crypto');
-    const token = crypto.randomBytes(32).toString('hex');
-    const hashed = crypto.createHash('sha256').update(token).digest('hex');
-    const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000);
+    let token, hashed;
+    let attempts = 0;
+    const maxAttempts = 5;
 
+    // Ensure the generated token's hash does not collide with another user's reset_token.
+    while (attempts < maxAttempts) {
+        token = crypto.randomBytes(32).toString('hex');
+        hashed = crypto.createHash('sha256').update(token).digest('hex');
+
+        const existing = await prisma.users.findFirst({ where: { reset_token: hashed } });
+        if (existing && existing.id !== user.id) {
+            attempts++;
+            console.warn(`[users.service] duplicate reset token hash collision (attempt ${attempts}) for userId=${user.id}, collidesWith=${existing.id}`);
+            continue; // retry
+        }
+
+        // no collision (or collision with same user) — use this token
+        break;
+    }
+
+    if (attempts >= maxAttempts) {
+        const err = new Error('Failed to generate unique reset token, try again');
+        err.status = 500;
+        console.error(`[users.service] failed to generate unique reset token for userId=${user.id} after ${maxAttempts} attempts`);
+        throw err;
+    }
+
+    const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000);
     await prisma.users.update({ where: { id: user.id }, data: { reset_token: hashed, reset_expires_at: expiresAt } });
+
+    console.info(`[users.service] generated reset token hash for userId=${user.id}, expiresAt=${expiresAt.toISOString()}`);
     return token;
 };
 
@@ -187,8 +213,11 @@ exports.resetPasswordByToken = async (token, newPassword) => {
     const crypto = require('crypto');
     const hashed = crypto.createHash('sha256').update(token).digest('hex');
 
+    console.info(`[users.service] resetPasswordByToken attempt, tokenHashPrefix=${hashed.slice(0,8)}`);
+
     const user = await prisma.users.findFirst({ where: { reset_token: hashed, reset_expires_at: { gte: new Date() } } });
     if (!user) {
+        console.warn(`[users.service] invalid or expired reset token used (hashPrefix=${hashed.slice(0,8)})`);
         const err = new Error('Invalid or expired token');
         err.status = 400;
         throw err;
@@ -206,5 +235,6 @@ exports.resetPasswordByToken = async (token, newPassword) => {
         console.error('failed to revoke sessions after password reset', e);
     }
 
+    console.info(`[users.service] password reset completed for userId=${user.id}`);
     return updated;
 };
