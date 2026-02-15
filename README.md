@@ -209,9 +209,25 @@ cd docker/redis
 docker compose up -d
 ```
 
-The stack exposes:
-- Redis host port: `6380` -> container `6379` (adjust `docker-compose.yml` if you need a different host port)
+Notes for this repository (development):
+- The compose file maps container Redis `6379` to host `6380` to avoid conflicts with a local Redis that may run on `6379`.
+- Grafana has been remapped to host port `3001` in the compose file to avoid a port collision with the API server. If you changed the mapping, update `REDIS_URL` and any local checks accordingly.
+
+The stack exposes (default mapping in `docker/redis/docker-compose.yml`):
+- Redis host port: `6380` -> container `6379`
 - Prometheus UI: http://localhost:9090
-- Grafana UI: http://localhost:3000 (default admin/admin)
+- Grafana UI: http://localhost:3001 (default admin/admin)
+
+If you changed the compose ports, update `REDIS_URL` in `.env` accordingly (e.g. `redis://127.0.0.1:6380`).
+
+Additional notes:
+- A backup of your original `.env` was created as `.env.bak` when the environment was tidied. Do not commit secrets from either file.
+- To restart only the monitoring stack (no API restart required):
+
+```powershell
+cd docker/redis
+docker compose down
+docker compose up -d
+```
 
 Grafana is provisioned to auto-import a basic Redis dashboard. For production use, provide a managed Redis or a proper Redis Cluster and update environment variables accordingly.
