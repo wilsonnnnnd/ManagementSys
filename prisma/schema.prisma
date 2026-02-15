@@ -7,15 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model sessions {
-  id                 Int       @id @default(autoincrement())
-  user_id            Int
-  refresh_token      String    @unique
-  refresh_expires_at DateTime  @db.Timestamp(6)
-  created_at         DateTime  @default(now()) @db.Timestamp(6)
-  revoked_at         DateTime? @db.Timestamp(6)
-  users              users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-}
+// `sessions` moved to Redis. Table removed.
 
 model users {
   id                Int        @id @default(autoincrement())
@@ -33,7 +25,7 @@ model users {
   last_login_at     DateTime?  @db.Timestamp(6)
   created_at        DateTime   @default(now()) @db.Timestamp(6)
   updated_at        DateTime   @default(now()) @db.Timestamp(6)
-  sessions          sessions[]
+  // sessions removed — now stored in Redis
   api_logs          api_logs[]
 }
 

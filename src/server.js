@@ -6,6 +6,12 @@ try {
 }
 
 const app = require("./app");
+// start background workers (non-blocking)
+try {
+    require('./workers/logWorker');
+} catch (e) {
+    console.error('failed to start log worker', e);
+}
 
 const PORT = process.env.PORT || 3000;
 

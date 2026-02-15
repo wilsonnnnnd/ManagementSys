@@ -19,6 +19,14 @@ app.use(express.json());
 // authentication (applies to all routes except /health and /auth/* inside middleware)
 app.use(authMiddleware);
 
+// cache GET responses early
+const cacheMiddleware = require('./middleware/cache.middleware');
+app.use(cacheMiddleware(Number(process.env.CACHE_TTL_SECONDS || 60)));
+
+// metrics
+const metricsMiddleware = require('./middleware/metrics.middleware');
+app.use(metricsMiddleware);
+
 // request/response logging (uses req.user when available)
 app.use(logMiddleware);
 

@@ -230,6 +230,33 @@ exports.resetPasswordByToken = async (token, newPassword) => {
 
     // revoke any active sessions for this user
     try {
+        // Revoke sessions in Redis (if available) and in DB for compatibility.
+        try {
+            const IORedis = require('ioredis');
+        } catch (e) {}
+        const redis = require('../db/redis');
+        if (redis) {
+            try {
+                const setKey = `user_sessions:${user.id}`;
+                const ids = await redis.smembers(setKey);
+                for (const sid of ids) {
+                    try {
+                        const sraw = await redis.get(`session:${sid}`);
+                        if (sraw) {
+                            const s = JSON.parse(sraw);
+                            s.revoked_at = new Date().toISOString();
+                            await redis.set(`session:${sid}`, JSON.stringify(s));
+                        }
+                        await redis.srem(setKey, sid);
+                    } catch (e) {
+                        console.error('failed to revoke redis session', e);
+                    }
+                }
+            } catch (e) {
+                console.error('failed to list/revoke redis sessions for user', e);
+            }
+        }
+
         await prisma.sessions.updateMany({ where: { user_id: user.id, revoked_at: null }, data: { revoked_at: new Date() } });
     } catch (e) {
         console.error('failed to revoke sessions after password reset', e);

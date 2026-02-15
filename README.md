@@ -198,3 +198,20 @@ Next steps / improvements
 Contact
 ---
 See repository maintainers or project README for owner/contact information.
+
+Local monitoring stack
+----------------------
+
+To run a local Redis with persistence and monitoring (Prometheus + Grafana), use the provided docker-compose in `docker/redis`:
+
+```bash
+cd docker/redis
+docker compose up -d
+```
+
+The stack exposes:
+- Redis host port: `6380` -> container `6379` (adjust `docker-compose.yml` if you need a different host port)
+- Prometheus UI: http://localhost:9090
+- Grafana UI: http://localhost:3000 (default admin/admin)
+
+Grafana is provisioned to auto-import a basic Redis dashboard. For production use, provide a managed Redis or a proper Redis Cluster and update environment variables accordingly.

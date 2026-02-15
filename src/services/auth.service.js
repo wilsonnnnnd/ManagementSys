@@ -1,4 +1,5 @@
 const prisma = require("../db/prisma");
+const redis = require('../db/redis');
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const tokenService = require("./token.service");
@@ -49,28 +50,78 @@ exports.login = async (email, password) => {
 
     // Attempt to reuse an active session for this user. If one exists,
     // replace its stored hashed secret. Otherwise create a new session.
-    let session = await prisma.sessions.findFirst({
-        where: { user_id: user.id, revoked_at: null },
-        orderBy: { id: "desc" },
-    });
+    // Sessions are stored primarily in Redis under `session:<id>` and
+    // indexed by `user_sessions:<userId>` set. We use `sessions:nextId` counter
+    // to generate numeric ids compatible with tokenService.
+    async function cacheSession(s) {
+        if (!redis || !s) return;
+        try {
+            const ttl = Math.max(1, Math.ceil((refreshExpiresAt.getTime() - Date.now())/1000));
+            await redis.set(`session:${s.id}`, JSON.stringify(s), 'EX', ttl);
+            await redis.sadd(`user_sessions:${s.user_id}`, s.id);
+        } catch (e) {
+            console.error('auth.service: failed to cache session in redis', e);
+        }
+    }
+
+    let session = null;
+    try {
+        if (redis) {
+            const userSet = `user_sessions:${user.id}`;
+            const ids = await redis.smembers(userSet);
+            for (const sid of ids) {
+                const sraw = await redis.get(`session:${sid}`);
+                if (!sraw) continue;
+                const s = JSON.parse(sraw);
+                if (s.revoked_at) continue;
+                if (s.refresh_expires_at && new Date(s.refresh_expires_at) <= new Date()) continue;
+                session = s;
+                break;
+            }
+        }
+    } catch (e) {
+        console.error('auth.service: failed to read sessions from redis', e);
+    }
 
     if (session) {
-        session = await prisma.sessions.update({
-            where: { id: session.id },
-            data: {
-                refresh_token: secretHash,
-                refresh_expires_at: refreshExpiresAt,
-                revoked_at: null,
-            },
-        });
+        // update existing session secret + expiry
+        session.refresh_token = secretHash;
+        session.refresh_expires_at = refreshExpiresAt.toISOString();
+        session.revoked_at = null;
+        if (redis) {
+            try {
+                await redis.set(`session:${session.id}`, JSON.stringify(session), 'EX', Math.max(1, Math.ceil((refreshExpiresAt.getTime() - Date.now())/1000)));
+            } catch (e) {
+                console.error('auth.service: failed to update session in redis', e);
+            }
+        } else {
+            session = await prisma.sessions.update({ where: { id: session.id }, data: { refresh_token: secretHash, refresh_expires_at: refreshExpiresAt, revoked_at: null } });
+            await cacheSession(session);
+        }
     } else {
-        session = await prisma.sessions.create({
-            data: {
-                user_id: user.id,
-                refresh_token: secretHash,
-                refresh_expires_at: refreshExpiresAt,
-            },
-        });
+        // create new session id via redis counter or DB fallback
+        if (redis) {
+            try {
+                const sid = await redis.incr('sessions:nextId');
+                const sessionObj = {
+                    id: sid,
+                    user_id: user.id,
+                    refresh_token: secretHash,
+                    refresh_expires_at: refreshExpiresAt.toISOString(),
+                    revoked_at: null,
+                };
+                await redis.set(`session:${sid}`, JSON.stringify(sessionObj), 'EX', Math.max(1, Math.ceil((refreshExpiresAt.getTime() - Date.now())/1000)));
+                await redis.sadd(`user_sessions:${user.id}`, sid);
+                session = sessionObj;
+            } catch (e) {
+                console.error('auth.service: failed to create session in redis', e);
+            }
+        }
+
+        if (!session) {
+            session = await prisma.sessions.create({ data: { user_id: user.id, refresh_token: secretHash, refresh_expires_at: refreshExpiresAt } });
+            await cacheSession(session);
+        }
     }
 
     // create access token that references session id
@@ -98,9 +149,19 @@ exports.refresh = async (refreshToken) => {
     const parsed = tokenService.parseRefreshToken(refreshToken);
     assert(parsed, "refresh token required", 401);
 
-    const session = await prisma.sessions.findUnique({
-        where: { id: parsed.sessionId },
-    });
+    // Try redis cache first
+    let session = null;
+    if (redis) {
+        try {
+            const cached = await redis.get(`session:${parsed.sessionId}`);
+            if (cached) session = JSON.parse(cached);
+        } catch (e) {
+            console.error('auth.service: redis get session error', e);
+        }
+    }
+    if (!session) {
+        session = await prisma.sessions.findUnique({ where: { id: parsed.sessionId } });
+    }
     assert(session && !session.revoked_at, "Session not found or revoked", 401);
     assert(
         new Date(session.refresh_expires_at) > new Date(),
@@ -124,13 +185,38 @@ exports.refresh = async (refreshToken) => {
         Date.now() + REFRESH_TTL_HOURS * 60 * 60 * 1000,
     );
 
-    await prisma.sessions.update({
-        where: { id: session.id },
-        data: {
-            refresh_token: newSecretHash,
-            refresh_expires_at: newRefreshExpiresAt,
-        },
-    });
+    let updatedSession = null;
+    if (redis) {
+        try {
+            const sraw = await redis.get(`session:${session.id}`);
+            if (sraw) {
+                const s = JSON.parse(sraw);
+                s.refresh_token = newSecretHash;
+                s.refresh_expires_at = newRefreshExpiresAt.toISOString();
+                await redis.set(`session:${s.id}`, JSON.stringify(s), 'EX', Math.max(1, Math.ceil((newRefreshExpiresAt.getTime() - Date.now())/1000)));
+                updatedSession = s;
+            }
+        } catch (e) {
+            console.error('auth.service: redis update session error', e);
+        }
+    }
+
+    if (!updatedSession) {
+        updatedSession = await prisma.sessions.update({
+            where: { id: session.id },
+            data: {
+                refresh_token: newSecretHash,
+                refresh_expires_at: newRefreshExpiresAt,
+            },
+        });
+        if (redis) {
+            try {
+                await redis.set(`session:${updatedSession.id}`, JSON.stringify(updatedSession), 'EX', Math.max(1, Math.ceil((newRefreshExpiresAt.getTime() - Date.now())/1000)));
+            } catch (e) {
+                console.error('auth.service: failed to update session cache', e);
+            }
+        }
+    }
 
     const accessToken = jwt.sign(
         { userId: user.id, sessionId: session.id },
@@ -151,16 +237,40 @@ exports.logout = async (refreshToken) => {
     const parsed = tokenService.parseRefreshToken(refreshToken);
     if (!parsed) return;
 
-    const session = await prisma.sessions.findUnique({ where: { id: parsed.sessionId } });
-    if (!session) return;
+    // try redis first
+    let session = null;
+    if (redis) {
+        try {
+            const sraw = await redis.get(`session:${parsed.sessionId}`);
+            if (sraw) session = JSON.parse(sraw);
+        } catch (e) {
+            console.error('auth.service: redis get session error', e);
+        }
+    }
+    if (!session) {
+        session = await prisma.sessions.findUnique({ where: { id: parsed.sessionId } });
+        if (!session) return;
+    }
 
     const ok = await tokenService.verifySecret(parsed.secret, session.refresh_token);
     if (!ok) return;
 
-    await prisma.sessions.update({
-        where: { id: session.id },
-        data: { revoked_at: new Date() },
-    });
+    // revoke in redis and db
+    try {
+        if (redis) {
+            try {
+                // mark revoked
+                session.revoked_at = new Date().toISOString();
+                await redis.set(`session:${session.id}`, JSON.stringify(session));
+                await redis.srem(`user_sessions:${session.user_id}`, session.id);
+            } catch (e) {
+                console.error('auth.service: failed to revoke session in redis', e);
+            }
+        }
+        await prisma.sessions.update({ where: { id: session.id }, data: { revoked_at: new Date() } });
+    } catch (e) {
+        console.error('auth.service: failed to revoke session', e);
+    }
 };
 
 exports.verifySession = async (accessToken) => {
@@ -178,9 +288,18 @@ exports.verifySession = async (accessToken) => {
     const sessionId = payload.sessionId;
     assert(sessionId, "Invalid token payload", 401);
 
-    const session = await prisma.sessions.findUnique({
-        where: { id: sessionId },
-    });
+    let session = null;
+    if (redis) {
+        try {
+            const cached = await redis.get(`session:${sessionId}`);
+            if (cached) session = JSON.parse(cached);
+        } catch (e) {
+            console.error('auth.service: redis get session error', e);
+        }
+    }
+    if (!session) {
+        session = await prisma.sessions.findUnique({ where: { id: sessionId } });
+    }
     assert(session && !session.revoked_at, "Session not found or revoked", 401);
     assert(
         new Date(session.refresh_expires_at) > new Date(),

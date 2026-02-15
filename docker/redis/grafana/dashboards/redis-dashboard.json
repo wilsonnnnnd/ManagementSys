@@ -1,0 +1,61 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Redis Up",
+      "gridPos": {"h": 3, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "redis_up", "legendFormat": "up"}]
+    },
+    {
+      "type": "gauge",
+      "title": "Memory Usage",
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "redis_memory_used_bytes", "legendFormat": "used"}],
+      "options": {"min": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Connected Clients",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "targets": [{"expr": "redis_connected_clients", "legendFormat": "clients"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Commands Processed/sec",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "targets": [{"expr": "rate(redis_commands_processed_total[1m])", "legendFormat": "cmds/s"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Network In/Out",
+      "gridPos": {"h": 4, "w": 12, "x": 0, "y": 4},
+      "targets": [
+        {"expr": "rate(redis_net_input_bytes_total[1m])", "legendFormat": "in"},
+        {"expr": "rate(redis_net_output_bytes_total[1m])", "legendFormat": "out"}
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Top Keys (by TTL not available)",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 4},
+      "options": {"showHeader": true},
+      "targets": []
+    }
+  ],
+  "schemaVersion": 30,
+  "style": "dark",
+  "tags": ["redis"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Redis Overview (Prometheus)",
+  "uid": "redis-overview",
+  "version": 2
+}
