@@ -1,8 +1,12 @@
 const AuthService = require("../services/auth.service");
 
 module.exports = async function authMiddleware(req, res, next) {
-    // Allow unauthenticated access to health and auth endpoints
-    if (req.path === "/health" || req.path.startsWith("/auth")) {
+    // Allow unauthenticated access to health and auth endpoints.
+    // Use both `req.path` and `req.originalUrl` to be robust when the
+    // app is mounted or running behind proxies that may alter the path.
+    const path = req.path || "";
+    const original = req.originalUrl || "";
+    if (path === "/health" || path.startsWith("/auth") || original.startsWith("/auth")) {
         return next();
     }
 
